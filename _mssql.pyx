@@ -51,6 +51,12 @@ from cpython cimport bool
 from cpython.mem cimport PyMem_Malloc, PyMem_Free
 from cpython.long cimport PY_LONG_LONG
 
+try:
+    basestring
+except NameError:
+    # Python 3 has no basestring
+    basestring = str
+
 # Vars to store messages from the server in
 cdef int _mssql_last_msg_no = 0
 cdef int _mssql_last_msg_severity = 0
@@ -62,7 +68,7 @@ cdef char *_mssql_last_msg_proc = <char *>PyMem_Malloc(PYMSSQL_MSGSIZE)
 IF PYMSSQL_DEBUG == 1:
     cdef int _row_count = 0
 
-cdef bytes HOSTNAME = socket.gethostname()
+cdef str HOSTNAME = socket.gethostname()
 
 # List to store the connection objects in
 cdef list connection_object_list = list()
@@ -453,15 +459,26 @@ cdef class MSSQLConnection:
 
         appname = appname or "pymssql"
 
-        DBSETLUSER(login, user)
-        DBSETLPWD(login, password)
-        DBSETLAPP(login, appname)
+        # For Python 3, we need to convert unicode to byte strings
+        cdef bytes user_bytes = user.encode('ascii')
+        cdef char *user_cstr = user_bytes
+        cdef bytes password_bytes = password.encode('ascii')
+        cdef char *password_cstr = password_bytes
+        cdef bytes appname_bytes = appname.encode('ascii')
+        cdef char *appname_cstr = appname_bytes
+
+        DBSETLUSER(login, user_cstr)
+        DBSETLPWD(login, password_cstr)
+        DBSETLAPP(login, appname_cstr)
         DBSETLVERSION(login, _tds_ver_str_to_constant(tds_version))
 
         # add the port to the server string if it doesn't have one already and
         # if we are not using an instance
         if ':' not in server and not instance:
             server = '%s:%s' % (server, port)
+
+        cdef bytes server_bytes = server.encode('ascii')
+        cdef char *server_cstr = server_bytes
 
         # override the HOST to be the portion without the server, otherwise
         # FreeTDS chokes when server still has the port definition.
@@ -488,7 +505,7 @@ cdef class MSSQLConnection:
         dbsetlogintime(login_timeout)
 
         # Connect to the server
-        self.dbproc = dbopen(login, server)
+        self.dbproc = dbopen(login, server_cstr)
 
         # Frees the login record, can be called immediately after dbopen.
         dbloginfree(login)
@@ -647,6 +664,8 @@ cdef class MSSQLConnection:
         elif type in (SQLVARCHAR, SQLCHAR, SQLTEXT):
             if strlen(self._charset):
                 return (<char *>data)[:length].decode(self._charset)
+            elif PY_MAJOR_VERSION >= 3:
+                return (<char *>data)[:length].decode('ascii')
             else:
                 return (<char *>data)[:length]
 
@@ -939,6 +958,11 @@ cdef class MSSQLConnection:
         execute_*() function. It returns NULL on error, None on success.
         """
         cdef RETCODE rtc
+
+        # For Python 3, we need to convert unicode to byte strings
+        cdef bytes query_string_bytes = query_string.encode('ascii')
+        cdef char *query_string_cstr = query_string_bytes
+
         log("_mssql.MSSQLConnection.format_and_run_query() BEGIN")
 
         try:
@@ -948,10 +972,10 @@ cdef class MSSQLConnection:
             if params:
                 query_string = self.format_sql_command(query_string, params)
 
-            log(query_string)
+            log(query_string_cstr)
 
             # Prepare the query buffer
-            dbcmd(self.dbproc, query_string)
+            dbcmd(self.dbproc, query_string_cstr)
 
             # Execute the query
             rtc = db_sqlexec(self.dbproc)
@@ -1120,7 +1144,11 @@ cdef class MSSQLConnection:
         cdef RETCODE rtc
         log("_mssql.MSSQLConnection.select_db()")
 
-        dbuse(self.dbproc, dbname)
+        # For Python 3, we need to convert unicode to byte strings
+        cdef bytes dbname_bytes = dbname.encode('ascii')
+        cdef char *dbname_cstr = dbname_bytes
+
+        dbuse(self.dbproc, dbname_cstr)
 
 ##################################
 ## MSSQL Stored Procedure Class ##
@@ -1424,7 +1452,7 @@ def remove_locale(bytes value):
     cdef size_t l = strlen(s)
     return _remove_locale(s, l)
 
-cdef int _tds_ver_str_to_constant(bytes verstr) except -1:
+cdef int _tds_ver_str_to_constant(verstr) except -1:
     """
         http://www.freetds.org/userguide/choosingtdsprotocol.htm
     """

@@ -88,6 +88,11 @@ cdef dict DBTYPES = {
     'NoneType': _mssql.SQLVARCHAR,
 }
 
+try:
+    StandardError
+except NameError:
+    StandardError = Exception
+
 # exception hierarchy
 class Warning(StandardError):
     pass
@@ -421,7 +426,7 @@ cdef class Cursor:
         Helper method used by fetchone and fetchmany to fetch and handle
         converting the row if as_dict = False.
         """
-        row = iter(self._source._conn).next()
+        row = next(iter(self._source._conn))
         self._rownumber = self._source._conn.rows_affected
         if self.as_dict:
             return row2dict(row)
@@ -470,8 +475,10 @@ cdef class Cursor:
             if self.as_dict:
                 rows = [row2dict(row) for row in self._source._conn]
             else:
+                rows = [dict([(k, v) for k, v in row.items() if isinstance(k, int)])
+                        for row in self._source._conn]
                 rows = [tuple([row[r] for r in sorted(row.keys()) if \
-                        type(r) == int]) for row in self._source._conn]
+                        type(r) == int]) for row in rows]
             self._rownumber = self._source._conn.rows_affected
             return rows
         except _mssql.MSSQLDatabaseException, e:
