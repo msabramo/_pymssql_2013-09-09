@@ -45,8 +45,11 @@ Distribution(dict(setup_requires='Cython>=0.13.1'))
 from distutils import log
 from distutils.cmd import Command
 from distutils.command.clean import clean as _clean
+from distutils import ccompiler
 from Cython.Distutils import build_ext as _build_ext
 import struct
+
+compiler = ccompiler.new_compiler()
 
 _extra_compile_args = [
     '-DMSDBLIB'
@@ -70,7 +73,9 @@ else:
     library_dirs = [
         osp.join(FREETDS, 'lib')
     ]
-    libraries = [ 'sybdb', 'rt' ]
+    libraries = [ 'sybdb' ]
+    if compiler.has_function('clock_gettime', libraries=['rt']):
+        libraries.append('rt')
 
 if sys.platform == 'darwin':
     fink = '/sw/'
